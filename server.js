@@ -8,7 +8,7 @@ import path from "path";
 import { fileURLToPath } from "url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const PORT = 8000;
+const PORT = process.env.PORT || 8000;
 const YT_KEY = "AIzaSyBdbirr7DX_BpEsjjYk5yTWXgKIUP-e6W4";
 
 // Fetch top embeddable tutorial videos from YouTube for a query.
