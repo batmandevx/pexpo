@@ -1,0 +1,610 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>AccessFit — AI Gym Buddy</title>
+<style>
+  :root{
+    --accent:#6c8cff; --accent2:#a85cff; --good:#28c76f; --bad:#ff5c6c;
+    --warn:#ffb547; --text:#eaf0ff; --muted:#9aa4c8; --glass:rgba(24,30,54,.55);
+  }
+  *{box-sizing:border-box;font-family:system-ui,Segoe UI,Roboto,sans-serif;}
+  html,body{margin:0;height:100%;}
+  body{
+    color:var(--text); overflow-x:hidden;
+    background:linear-gradient(125deg,#0a0f24,#16123a,#0a1f33,#1a0f2e);
+    background-size:400% 400%; animation:bgShift 18s ease infinite;
+  }
+  @keyframes bgShift{0%{background-position:0 50%}50%{background-position:100% 50%}100%{background-position:0 50%}}
+  /* floating blobs */
+  .blob{position:fixed;border-radius:50%;filter:blur(80px);opacity:.35;z-index:0;pointer-events:none;animation:float 14s ease-in-out infinite;}
+  .blob.a{width:340px;height:340px;background:#6c8cff;top:-80px;left:-60px;}
+  .blob.b{width:300px;height:300px;background:#a85cff;bottom:-90px;right:-50px;animation-delay:-5s;}
+  @keyframes float{0%,100%{transform:translateY(0) scale(1)}50%{transform:translateY(40px) scale(1.1)}}
+
+  header{position:relative;z-index:2;padding:16px 24px;display:flex;align-items:center;gap:14px;flex-wrap:wrap;}
+  header h1{font-size:24px;margin:0;background:linear-gradient(90deg,#6c8cff,#a85cff,#28c76f);-webkit-background-clip:text;background-clip:text;color:transparent;background-size:200%;animation:bgShift 6s linear infinite;}
+  .logo{display:inline-block;animation:wave 2.4s ease-in-out infinite;transform-origin:70% 70%;}
+  @keyframes wave{0%,60%,100%{transform:rotate(0)}15%{transform:rotate(16deg)}30%{transform:rotate(-8deg)}45%{transform:rotate(12deg)}}
+  header .tag{color:var(--muted);font-size:13px;}
+
+  .wrap{position:relative;z-index:2;display:flex;gap:18px;padding:0 18px 28px;flex-wrap:wrap;}
+  .left{flex:1 1 560px;min-width:340px;display:flex;flex-direction:column;gap:18px;}
+  .right{flex:1 1 340px;min-width:300px;display:flex;flex-direction:column;gap:18px;}
+
+  .card{
+    background:var(--glass); border-radius:18px; padding:16px;
+    border:1px solid rgba(255,255,255,.08);
+    box-shadow:0 10px 30px rgba(0,0,0,.35);
+    backdrop-filter:blur(14px); -webkit-backdrop-filter:blur(14px);
+    transition:transform .35s cubic-bezier(.2,.8,.2,1), box-shadow .35s;
+    animation:rise .6s both;
+  }
+  .card:hover{transform:translateY(-4px);box-shadow:0 18px 44px rgba(80,110,255,.25);}
+  .card:nth-child(2){animation-delay:.08s}.card:nth-child(3){animation-delay:.16s}
+  .card:nth-child(4){animation-delay:.24s}.card:nth-child(5){animation-delay:.32s}
+  @keyframes rise{from{opacity:0;transform:translateY(24px)}to{opacity:1;transform:translateY(0)}}
+  .card h3{margin:0 0 12px;font-size:13px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;}
+
+  .stage{position:relative;background:#000;border-radius:20px;overflow:hidden;aspect-ratio:4/3;
+    border:1px solid rgba(255,255,255,.1);box-shadow:0 16px 50px rgba(0,0,0,.5);animation:rise .6s both;}
+  video,canvas{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;transform:scaleX(-1);}
+  .hud{position:absolute;top:12px;left:12px;right:12px;display:flex;justify-content:space-between;gap:8px;pointer-events:none;z-index:3;}
+  .pill{background:rgba(0,0,0,.5);backdrop-filter:blur(8px);padding:9px 16px;border-radius:999px;font-weight:700;border:1px solid rgba(255,255,255,.12);}
+  .reps{font-size:30px;display:flex;align-items:center;gap:6px;}
+  #repCount{display:inline-block;min-width:24px;text-align:center;}
+  #repCount.bump{animation:bump .4s cubic-bezier(.3,1.5,.5,1);}
+  @keyframes bump{0%{transform:scale(1)}40%{transform:scale(1.7);color:var(--good)}100%{transform:scale(1)}}
+
+  .feedback{position:absolute;bottom:14px;left:14px;right:14px;text-align:center;font-size:22px;font-weight:800;
+    background:rgba(0,0,0,.5);padding:14px;border-radius:14px;pointer-events:none;z-index:3;
+    border:1px solid rgba(255,255,255,.1);transition:.3s;}
+  .feedback.good{background:rgba(40,199,111,.25);border-color:var(--good);box-shadow:0 0 30px rgba(40,199,111,.5);animation:pop .4s;}
+  .feedback.warn{background:rgba(255,181,71,.22);border-color:var(--warn);}
+  .feedback.bad{background:rgba(255,92,108,.22);border-color:var(--bad);}
+  @keyframes pop{0%{transform:scale(.92)}50%{transform:scale(1.03)}100%{transform:scale(1)}}
+
+  /* balance / lean indicator */
+  .balance{position:absolute;top:58px;left:50%;transform:translateX(-50%);z-index:3;pointer-events:none;
+    display:none;flex-direction:column;align-items:center;gap:5px;}
+  .balance.on{display:flex;animation:pop .4s;}
+  .ballabel{font-size:13px;font-weight:800;background:rgba(0,0,0,.55);padding:4px 12px;border-radius:999px;border:1px solid rgba(255,255,255,.12);transition:.2s;}
+  .balbar{width:180px;height:9px;border-radius:6px;background:rgba(0,0,0,.55);position:relative;border:1px solid rgba(255,255,255,.15);}
+  .balbar .center{position:absolute;left:50%;top:-4px;bottom:-4px;width:2px;background:rgba(255,255,255,.45);transform:translateX(-50%);}
+  .balbar .mark{position:absolute;top:50%;left:50%;width:15px;height:15px;border-radius:50%;background:var(--good);color:var(--good);
+    transform:translate(-50%,-50%);transition:left .12s ease,background .25s,color .25s;box-shadow:0 0 12px currentColor;}
+
+  .calib{position:absolute;inset:0;z-index:4;display:none;flex-direction:column;align-items:center;justify-content:center;
+    background:rgba(6,10,28,.75);backdrop-filter:blur(6px);text-align:center;padding:20px;}
+  .calib.on{display:flex;animation:pop .4s;}
+  .scanring{width:120px;height:120px;border-radius:50%;border:5px solid rgba(108,140,255,.25);border-top-color:var(--accent);animation:spin 1s linear infinite;margin-bottom:18px;}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  .calib h2{margin:0;font-size:22px;}.calib p{color:var(--muted);margin:8px 0 0;}
+
+  select,button,input{font-size:15px;border-radius:12px;border:1px solid rgba(255,255,255,.12);background:rgba(20,26,50,.8);color:var(--text);padding:11px 13px;transition:.2s;}
+  select:focus,input:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px rgba(108,140,255,.25);}
+  button{cursor:pointer;border:none;font-weight:700;color:#fff;
+    background:linear-gradient(90deg,var(--accent),var(--accent2));background-size:200%;position:relative;overflow:hidden;}
+  button:hover{transform:translateY(-2px);box-shadow:0 8px 20px rgba(108,140,255,.4);background-position:100%;}
+  button:active{transform:translateY(0)}
+  button.secondary{background:rgba(40,48,86,.9);}
+  button:disabled{opacity:.5;cursor:not-allowed;transform:none;box-shadow:none;}
+  .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center;}
+  .row > *{flex:1;}
+
+  .stat{display:flex;justify-content:space-between;align-items:center;padding:9px 0;border-bottom:1px solid rgba(255,255,255,.07);font-size:14px;}
+  .stat:last-child{border:none;}
+  .stat b{font-variant-numeric:tabular-nums;}
+  .ring{--p:0;width:64px;height:64px;border-radius:50%;display:grid;place-items:center;font-size:14px;font-weight:800;
+    background:conic-gradient(var(--good) calc(var(--p)*1%), rgba(255,255,255,.1) 0);transition:--p .6s;}
+  .ring span{width:48px;height:48px;border-radius:50%;background:#12172e;display:grid;place-items:center;}
+
+  .dot{display:inline-block;width:10px;height:10px;border-radius:50%;background:var(--bad);margin-right:7px;box-shadow:0 0 0 0 rgba(40,199,111,.6);}
+  .dot.on{background:var(--good);animation:pulse 1.6s infinite;}
+  @keyframes pulse{0%{box-shadow:0 0 0 0 rgba(40,199,111,.6)}70%{box-shadow:0 0 0 9px rgba(40,199,111,0)}100%{box-shadow:0 0 0 0 rgba(40,199,111,0)}}
+
+  /* accessibility profile */
+  .profile{display:flex;gap:12px;align-items:center;}
+  .profile .ico{font-size:30px;animation:pop .5s;}
+  .profile .txt{font-size:14px;line-height:1.4;}
+  .profile .txt b{color:var(--accent);}
+
+  /* streak map */
+  .streakhead{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;}
+  .flame{font-size:22px;}.streaknum{font-size:24px;font-weight:800;color:var(--warn);}
+  .streak-grid{display:grid;grid-auto-flow:column;grid-template-rows:repeat(7,1fr);gap:4px;overflow-x:auto;padding-bottom:4px;}
+  .cell{width:13px;height:13px;border-radius:3px;background:rgba(255,255,255,.07);transition:.2s;}
+  .cell.l1{background:#0e4429}.cell.l2{background:#1f8f4e}.cell.l3{background:#34d27a}.cell.l4{background:#5cffa8;box-shadow:0 0 8px rgba(92,255,168,.6);}
+  .cell:hover{transform:scale(1.4);outline:1px solid #fff;}
+  .cell.today{outline:2px solid var(--accent);}
+  .legend{display:flex;gap:5px;align-items:center;justify-content:flex-end;font-size:11px;color:var(--muted);margin-top:8px;}
+  .legend .cell{width:11px;height:11px;}
+
+  /* ===== Featured AI chat ===== */
+  .card.featured{
+    border:1px solid rgba(108,140,255,.5);
+    box-shadow:0 0 0 1px rgba(108,140,255,.25), 0 18px 50px rgba(108,140,255,.28);
+    position:relative; overflow:hidden;
+  }
+  .card.featured::before{
+    content:"";position:absolute;inset:-2px;border-radius:20px;padding:2px;z-index:-1;
+    background:linear-gradient(120deg,#6c8cff,#a85cff,#28c76f,#6c8cff);background-size:300%;
+    animation:bgShift 6s linear infinite;
+    -webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);
+    -webkit-mask-composite:xor;mask-composite:exclude;opacity:.9;
+  }
+  .chathead{display:flex;align-items:center;gap:8px;margin:0 0 12px;}
+  .chathead .ttl{font-size:14px;font-weight:800;}
+  .chathead .badge{margin-left:auto;font-size:11px;font-weight:700;color:#cdd7ff;
+    background:rgba(108,140,255,.18);border:1px solid rgba(108,140,255,.4);padding:3px 9px;border-radius:999px;display:flex;align-items:center;gap:5px;}
+  .chathead .badge .ld{width:7px;height:7px;border-radius:50%;background:var(--good);animation:pulse 1.6s infinite;}
+
+  .chat{display:flex;flex-direction:column;height:340px;}
+  .msgs{flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:12px;padding:4px 4px 4px 0;}
+  .msg{display:flex;gap:8px;align-items:flex-end;max-width:92%;animation:msgIn .35s both;}
+  @keyframes msgIn{from{opacity:0;transform:translateY(8px) scale(.96)}to{opacity:1;transform:none}}
+  .msg .av{flex:0 0 28px;width:28px;height:28px;border-radius:50%;display:grid;place-items:center;font-size:15px;
+    background:rgba(40,48,86,.95);border:1px solid rgba(255,255,255,.12);}
+  .msg .bubble{padding:10px 13px;border-radius:14px;font-size:14px;line-height:1.5;box-shadow:0 4px 14px rgba(0,0,0,.25);}
+  .msg.ai{align-self:flex-start;}
+  .msg.ai .av{background:linear-gradient(135deg,#6c8cff,#a85cff);border:none;box-shadow:0 0 12px rgba(108,140,255,.6);}
+  .msg.ai .bubble{background:rgba(40,48,86,.95);border-bottom-left-radius:4px;}
+  .msg.user{align-self:flex-end;flex-direction:row-reverse;}
+  .msg.user .bubble{background:linear-gradient(120deg,var(--accent),var(--accent2));border-bottom-right-radius:4px;}
+  .typing span{display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--muted);margin:0 1px;animation:blink 1.2s infinite;}
+  .typing span:nth-child(2){animation-delay:.2s}.typing span:nth-child(3){animation-delay:.4s}
+  @keyframes blink{0%,80%,100%{opacity:.2}40%{opacity:1}}
+  .chips{display:flex;gap:6px;flex-wrap:wrap;margin:10px 0 8px;}
+  .chip{font-size:12px;font-weight:600;cursor:pointer;padding:6px 11px;border-radius:999px;
+    background:rgba(108,140,255,.12);border:1px solid rgba(108,140,255,.35);color:#cdd7ff;transition:.18s;}
+  .chip:hover{background:rgba(108,140,255,.3);transform:translateY(-2px);}
+  .chatbox{display:flex;gap:8px;}
+  .chatbox input{flex:3;}
+  .chatbox button{flex:0 0 52px;font-size:18px;padding:11px 0;}
+
+  small{color:var(--muted);}a{color:var(--accent);}
+  .ytframe{width:100%;aspect-ratio:16/9;border:none;border-radius:12px;}
+  .ytlist{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px;}
+  .ytthumb{cursor:pointer;border-radius:10px;overflow:hidden;background:rgba(20,26,50,.8);transition:.2s;}
+  .ytthumb:hover{transform:translateY(-3px);box-shadow:0 8px 18px rgba(0,0,0,.4);}
+  .ytthumb img{width:100%;display:block;}
+  .ytthumb span{display:block;font-size:11px;padding:6px 7px;line-height:1.25;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+
+  /* confetti */
+  .confetti{position:fixed;width:9px;height:9px;z-index:9;pointer-events:none;will-change:transform;}
+  label.sw{display:flex;align-items:center;gap:8px;justify-content:flex-start;flex:0 0 auto;cursor:pointer;font-size:14px;}
+  label.sw input{width:auto;flex:0;accent-color:var(--accent);}
+</style>
+</head>
+<body>
+<div class="blob a"></div><div class="blob b"></div>
+
+<header>
+  <h1><span class="logo">🦾</span> AccessFit</h1>
+  <span class="tag">Real-time AI gym coach · auto-adapts to your body · voice-guided</span>
+</header>
+
+<div class="wrap">
+  <div class="left">
+    <div class="stage">
+      <video id="video" playsinline></video>
+      <canvas id="canvas"></canvas>
+      <div class="hud">
+        <div class="pill"><span id="poseDot" class="dot"></span><span id="poseStatus">Camera off</span></div>
+        <div class="pill reps">🔥 <span id="repCount">0</span></div>
+      </div>
+      <div class="calib" id="calib">
+        <div class="scanring"></div>
+        <h2 id="calibTitle">Scanning your body…</h2>
+        <p id="calibMsg">Stand or sit naturally for a few seconds.</p>
+      </div>
+      <div class="balance" id="balance">
+        <div class="ballabel" id="balLabel">⚖️ Balance</div>
+        <div class="balbar"><div class="center"></div><div class="mark" id="balMark"></div></div>
+      </div>
+      <div class="feedback" id="feedback">Press “Start Coaching” and get into view of the camera.</div>
+    </div>
+
+    <div class="card">
+      <h3>♿ Accessibility profile (auto-detected)</h3>
+      <div class="profile">
+        <div class="ico" id="profIco">🔍</div>
+        <div class="txt" id="profTxt">Not scanned yet. Start coaching and I'll analyze your range of motion, then suggest tailored modifications out loud.</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="right">
+    <div class="card">
+      <h3>Workout</h3>
+      <div class="row" style="margin-bottom:10px;">
+        <select id="exercise">
+          <option value="squat">🦵 Squat (legs)</option>
+          <option value="curl">💪 Bicep Curl (arms)</option>
+          <option value="press">🏋️ Shoulder Press</option>
+          <option value="raise">🙆 Lateral Raise</option>
+        </select>
+        <select id="difficulty" title="Range of motion required">
+          <option value="easy">Accessible range</option>
+          <option value="normal" selected>Normal range</option>
+          <option value="strict">Full range</option>
+        </select>
+      </div>
+      <div class="row">
+        <button id="startBtn">▶ Start Coaching</button>
+        <button id="resetBtn" class="secondary">↺ Reset</button>
+      </div>
+      <div class="row" style="margin-top:10px;">
+        <label class="sw"><input type="checkbox" id="voiceToggle" checked> 🔊 Voice coaching</label>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>Live form analysis</h3>
+      <div class="stat"><span>Form score</span>
+        <div class="ring" id="formRing" style="--p:100"><span id="formVal">—</span></div></div>
+      <div class="stat"><span>Tracked angle</span><b id="angleVal">—</b></div>
+      <div class="stat"><span>Phase</span><b id="phaseVal">—</b></div>
+      <div class="stat"><span>Last rep</span><b id="qualVal">—</b></div>
+    </div>
+
+    <div class="card">
+      <h3>🔥 Workout streak</h3>
+      <div class="streakhead">
+        <div><span class="flame">🔥</span> <span class="streaknum" id="streakNum">0</span> day streak</div>
+        <small id="streakTotal">0 total reps</small>
+      </div>
+      <div class="streak-grid" id="streakGrid"></div>
+      <div class="legend">Less
+        <div class="cell"></div><div class="cell l1"></div><div class="cell l2"></div>
+        <div class="cell l3"></div><div class="cell l4"></div>More</div>
+    </div>
+
+    <div class="card">
+      <h3>📺 How-to videos</h3>
+      <div id="ytMain"><small>Pick an exercise to load tutorials.</small></div>
+      <div id="ytList" class="ytlist"></div>
+    </div>
+
+    <div class="card chat featured">
+      <div class="chathead">
+        <span class="ttl">🤖 AI Coach</span>
+        <span class="badge"><span class="ld"></span>Powered by Copilot</span>
+      </div>
+      <div class="msgs" id="msgs">
+        <div class="msg ai"><div class="av">🤖</div><div class="bubble">Hi! I'm your AI coach. Ask me anything about your workout — try a quick question below 👇</div></div>
+      </div>
+      <div class="chips" id="chips">
+        <span class="chip" data-q="Is my form okay?">Is my form okay?</span>
+        <span class="chip" data-q="Give me an easier version">Easier version</span>
+        <span class="chip" data-q="What muscle does this work?">What muscle?</span>
+        <span class="chip" data-q="How do I avoid injury?">Avoid injury</span>
+      </div>
+      <div class="chatbox">
+        <input id="chatInput" placeholder="Ask your coach…">
+        <button id="sendBtn" title="Send">➤</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script type="module">
+import { PoseLandmarker, FilesetResolver, DrawingUtils }
+  from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/vision_bundle.mjs";
+
+const $ = id => document.getElementById(id);
+const video=$("video"), canvas=$("canvas"), ctx=canvas.getContext("2d");
+let landmarker=null, running=false, raf=null;
+
+const L = { Lshoulder:11,Rshoulder:12,Lelbow:13,Relbow:14,Lwrist:15,Rwrist:16,
+  Lhip:23,Rhip:24,Lknee:25,Rknee:26,Lankle:27,Rankle:28 };
+const ROM = { easy:0.7, normal:1, strict:1.2 };
+const EXERCISES = {
+  squat:{ name:"Squat", joints:[L.Lhip,L.Lknee,L.Lankle], up:160, down:100,
+    cue:"Stand tall, then bend your knees and lower your hips like sitting in a chair.",
+    lowMsg:"Go a little lower", goodMsg:"Nice depth!", muscle:"quads, glutes and hamstrings",
+    yt:"how to do a proper squat for beginners step by step form"},
+  curl:{ name:"Bicep Curl", joints:[L.Lshoulder,L.Lelbow,L.Lwrist], up:150, down:55,
+    cue:"Keep your elbow tucked in and curl your hand up toward your shoulder.",
+    lowMsg:"Curl all the way up", goodMsg:"Full curl, great!", muscle:"biceps",
+    yt:"how to do a bicep curl proper form beginners tutorial"},
+  press:{ name:"Shoulder Press", joints:[L.Lshoulder,L.Lelbow,L.Lwrist], up:160, down:80,
+    cue:"Start with hands at your shoulders, then press straight up overhead.",
+    lowMsg:"Press all the way up", goodMsg:"Locked out, perfect!", muscle:"shoulders and triceps",
+    yt:"how to do a shoulder press proper form beginners tutorial"},
+  raise:{ name:"Lateral Raise", joints:[L.Lhip,L.Lshoulder,L.Lelbow], up:90, down:20,
+    cue:"Keep arms straight and raise them out to your sides up to shoulder height.",
+    lowMsg:"Raise arms higher", goodMsg:"Shoulder height, good!", muscle:"side deltoids",
+    yt:"how to do a lateral raise proper form beginners tutorial"}
+};
+
+let reps=0, phase="up", formScore=100, lastAngle=0, lastQuality="—", repBottom=999;
+
+// ---------- Voice (fast, clear) ----------
+let preferredVoice=null;
+function pickVoice(){ const vs=speechSynthesis.getVoices();
+  preferredVoice = vs.find(v=>/en-US/.test(v.lang)&&/female|zira|aria|samantha|jenny/i.test(v.name))
+    || vs.find(v=>/^en/.test(v.lang)) || vs[0]; }
+speechSynthesis.onvoiceschanged=pickVoice; pickVoice();
+function say(text,{clear=true,rate=1.08}={}){
+  if(!$("voiceToggle").checked) return;
+  try{ if(clear) speechSynthesis.cancel();
+    const u=new SpeechSynthesisUtterance(text); u.rate=rate; u.pitch=1.02;
+    if(preferredVoice) u.voice=preferredVoice; speechSynthesis.speak(u);}catch(e){}
+}
+
+// ---------- Geometry ----------
+function angle(a,b,c){
+  const ab={x:a.x-b.x,y:a.y-b.y}, cb={x:c.x-b.x,y:c.y-b.y};
+  const dot=ab.x*cb.x+ab.y*cb.y, m=Math.hypot(ab.x,ab.y)*Math.hypot(cb.x,cb.y);
+  return Math.acos(Math.max(-1,Math.min(1,dot/m)))*180/Math.PI;
+}
+const vis=(lm,i)=> (lm[i]&&lm[i].visibility)||0;
+
+// ---------- Disability auto-detection ----------
+let calibrating=false, calibStart=0, calib=null;
+function startCalibration(){
+  calibrating=true; calibStart=performance.now();
+  calib={lower:0,upper:0,left:0,right:0,n:0};
+  $("calib").classList.add("on");
+  $("calibTitle").textContent="Scanning your body…";
+  $("calibMsg").textContent="Move naturally for a few seconds so I can tailor the workout.";
+  say("Hold on, I'm scanning your range of motion.");
+}
+function accumCalib(lm){
+  const lower=[L.Lhip,L.Rhip,L.Lknee,L.Rknee,L.Lankle,L.Rankle];
+  const upper=[L.Lshoulder,L.Rshoulder,L.Lelbow,L.Relbow,L.Lwrist,L.Rwrist];
+  const left=[L.Lshoulder,L.Lelbow,L.Lwrist,L.Lhip,L.Lknee,L.Lankle];
+  const right=[L.Rshoulder,L.Relbow,L.Rwrist,L.Rhip,L.Rknee,L.Rankle];
+  const avg=arr=>arr.reduce((s,i)=>s+vis(lm,i),0)/arr.length;
+  calib.lower+=avg(lower); calib.upper+=avg(upper);
+  calib.left+=avg(left); calib.right+=avg(right); calib.n++;
+}
+function finishCalibration(){
+  calibrating=false; $("calib").classList.remove("on");
+  $("balance").classList.add("on");
+  const n=Math.max(1,calib.n);
+  const lower=calib.lower/n, upper=calib.upper/n, left=calib.left/n, right=calib.right/n;
+  let profile, ico, advice, speak;
+
+  if(upper<0.4 && lower<0.4){
+    profile="Limited visibility — please get more of your body in frame.";
+    ico="📷"; advice=""; speak="I couldn't see you clearly. Try adjusting the camera.";
+  } else if(lower<0.45 && upper>0.55){
+    profile="Seated / limited lower-body mobility detected.";
+    ico="🦽"; advice="Switching to seated upper-body exercises and an accessible range.";
+    speak="It looks like you're seated or have limited leg movement. I'll focus on seated arm and shoulder exercises with a comfortable range. No need to stand.";
+    $("difficulty").value="easy";
+    if($("exercise").value==="squat"){ $("exercise").value="curl"; loadVideos(); }
+  } else if(Math.abs(left-right)>0.22){
+    const weak = left<right ? "left" : "right", strong = left<right ? "right" : "left";
+    profile=`Asymmetry detected — your ${weak} side is less visible/mobile.`;
+    ico="⚖️"; advice=`Favor your ${strong} side and keep movements gentle.`;
+    speak=`I noticed your ${weak} side moves less. Let's favor your ${strong} side and keep an easy, controlled range. Only move within what feels comfortable.`;
+    $("difficulty").value="easy";
+  } else {
+    profile="Full range of motion detected — great!";
+    ico="✅"; advice="No modifications needed. Let's go for full reps.";
+    speak="Your range of motion looks great. No modifications needed — let's get full reps in!";
+  }
+  $("profIco").textContent=ico;
+  $("profTxt").innerHTML=`<b>${profile}</b><br>${advice}`;
+  say(speak,{rate:1.0});
+  setTimeout(()=>{ const ex=EXERCISES[$("exercise").value];
+    $("feedback").textContent=ex.cue; say(ex.cue,{clear:false,rate:1.0}); }, 5200);
+}
+
+// ---------- Pose model ----------
+async function initModel(){
+  $("feedback").textContent="Loading AI pose model…";
+  const vision=await FilesetResolver.forVisionTasks(
+    "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm");
+  landmarker=await PoseLandmarker.createFromOptions(vision,{
+    baseOptions:{ modelAssetPath:
+      "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task",
+      delegate:"GPU"},
+    runningMode:"VIDEO", numPoses:1});
+}
+async function start(){
+  if(!landmarker) await initModel();
+  const stream=await navigator.mediaDevices.getUserMedia({video:{width:640,height:480}});
+  video.srcObject=stream; await video.play();
+  canvas.width=video.videoWidth; canvas.height=video.videoHeight;
+  running=true; $("poseDot").classList.add("on"); $("poseStatus").textContent="Tracking";
+  startCalibration(); loop();
+}
+const draw=new DrawingUtils(ctx);
+function loop(){
+  if(!running) return;
+  if(video.readyState>=2){
+    const res=landmarker.detectForVideo(video,performance.now());
+    ctx.clearRect(0,0,canvas.width,canvas.height);
+    if(res.landmarks&&res.landmarks[0]){
+      const lm=res.landmarks[0];
+      draw.drawLandmarks(lm,{radius:4,color:"#6c8cff"});
+      draw.drawConnectors(lm,PoseLandmarker.POSE_CONNECTIONS,{color:"#28c76f",lineWidth:3});
+      if(calibrating){ accumCalib(lm);
+        if(performance.now()-calibStart>4000) finishCalibration();
+      } else { checkPosture(lm); analyze(lm); }
+    }
+  }
+  raf=requestAnimationFrame(loop);
+}
+
+function setFeedback(text,cls){ const f=$("feedback");
+  f.className="feedback"+(cls?" "+cls:""); f.textContent=text; }
+
+// ---------- Real-time balance / lean feedback ----------
+let postureState="level", lastPostureSpeak=0;
+function checkPosture(lm){
+  const ls=lm[L.Lshoulder], rs=lm[L.Rshoulder];
+  if(!ls||!rs||ls.visibility<0.5||rs.visibility<0.5){ return; }
+  const width=Math.abs(ls.x-rs.x)||0.001;
+  const tilt=(ls.y-rs.y)/width;           // >0 → leaning to their LEFT
+  const pos=Math.max(-1,Math.min(1,tilt/0.5));
+  $("balMark").style.left=(50+pos*46)+"%";
+  let state,label,color;
+  if(tilt>0.18){ state="left"; label="↩ Leaning left"; color="var(--warn)"; }
+  else if(tilt<-0.18){ state="right"; label="↪ Leaning right"; color="var(--warn)"; }
+  else { state="level"; label="⚖️ Balanced"; color="var(--good)"; }
+  if(Math.abs(tilt)>0.32) color="var(--bad)";
+  $("balMark").style.background=color; $("balMark").style.color=color;
+  $("balLabel").textContent=label;
+  if(state!==postureState){
+    postureState=state;
+    const now=performance.now();
+    if(state!=="level" && now-lastPostureSpeak>2600){
+      lastPostureSpeak=now;
+      const correct = state==="left" ? "right" : "left";
+      say(`You're leaning ${state}. Straighten your shoulders and lean slightly ${correct}.`,{clear:false,rate:1.05});
+    }
+  }
+}
+
+function analyze(lm){
+  const ex=EXERCISES[$("exercise").value];
+  const [a,b,c]=ex.joints.map(i=>lm[i]);
+  if(!a||!b||!c||a.visibility<0.5){ setFeedback("Adjust position — I can't see the joint clearly.","warn"); return; }
+  const ang=Math.round(angle(a,b,c));
+  lastAngle=ang; $("angleVal").textContent=ang+"°";
+  const tol=ROM[$("difficulty").value], downT=ex.down*tol, upT=ex.up;
+  if(ang<repBottom) repBottom=ang;
+
+  if(phase==="up" && ang<downT){ phase="down"; repBottom=ang; setFeedback("Hold… now return"); }
+  else if(phase==="down" && ang>upT){
+    phase="up"; reps++; bumpReps();
+    const full = repBottom <= ex.down;
+    lastQuality = full?"Good ✅":"Partial ⚠️";
+    formScore = Math.max(40, Math.min(100, formScore + (full?2:-8)));
+    $("qualVal").textContent=lastQuality;
+    setForm(formScore);
+    logRep();
+    if(full){ setFeedback(`Rep ${reps} · ${ex.goodMsg}`,"good"); confetti(); }
+    else setFeedback(`Rep ${reps} · ${ex.lowMsg} next time`,"warn");
+    say(full?`Rep ${reps}. ${ex.goodMsg}`:`Rep ${reps}. ${ex.lowMsg}.`);
+    repBottom=999;
+  }
+  $("phaseVal").textContent=phase;
+}
+function bumpReps(){ const el=$("repCount"); el.textContent=reps;
+  el.classList.remove("bump"); void el.offsetWidth; el.classList.add("bump"); }
+function setForm(v){ $("formVal").textContent=v+"%"; $("formRing").style.setProperty("--p",v); }
+
+// ---------- Confetti ----------
+function confetti(){
+  const colors=["#6c8cff","#a85cff","#28c76f","#ffb547","#ff5c6c"];
+  for(let i=0;i<26;i++){
+    const c=document.createElement("div"); c.className="confetti";
+    c.style.left=(40+Math.random()*20)+"%"; c.style.top="40%";
+    c.style.background=colors[i%colors.length];
+    c.style.borderRadius=Math.random()>.5?"50%":"2px";
+    document.body.appendChild(c);
+    const dx=(Math.random()-.5)*600, dy=300+Math.random()*300, rot=Math.random()*720;
+    c.animate([{transform:"translate(0,0) rotate(0)",opacity:1},
+      {transform:`translate(${dx}px,${dy}px) rotate(${rot}deg)`,opacity:0}],
+      {duration:1100+Math.random()*600,easing:"cubic-bezier(.2,.7,.3,1)"})
+      .onfinish=()=>c.remove();
+  }
+}
+
+// ---------- Streak map (GitHub-style, localStorage) ----------
+const SKEY="accessfit_streak";
+function loadStreak(){ try{return JSON.parse(localStorage.getItem(SKEY))||{};}catch{return {};} }
+function todayKey(){ return new Date().toISOString().slice(0,10); }
+function logRep(){ const d=loadStreak(); const k=todayKey();
+  d[k]=(d[k]||0)+1; localStorage.setItem(SKEY,JSON.stringify(d)); renderStreak(); }
+function lvl(n){ return n===0?0:n<5?1:n<10?2:n<20?3:4; }
+function renderStreak(){
+  const data=loadStreak(); const grid=$("streakGrid"); grid.innerHTML="";
+  const today=new Date(); const start=new Date(today);
+  start.setDate(today.getDate()-90);
+  start.setDate(start.getDate()-start.getDay()); // align to Sunday
+  let total=0;
+  for(let i=0;i<Object.keys(data).length;i++){} 
+  for(const k in data) total+=data[k];
+  const tKey=todayKey();
+  for(let d=new Date(start); d<=today; d.setDate(d.getDate()+1)){
+    const key=d.toISOString().slice(0,10); const n=data[key]||0;
+    const cell=document.createElement("div");
+    cell.className="cell"+(n?` l${lvl(n)}`:"")+(key===tKey?" today":"");
+    cell.title=`${key}: ${n} reps`;
+    grid.appendChild(cell);
+  }
+  // current streak
+  let streak=0; const cur=new Date(today);
+  while(true){ const key=cur.toISOString().slice(0,10);
+    if(data[key]&&data[key]>0){ streak++; cur.setDate(cur.getDate()-1); } else break; }
+  $("streakNum").textContent=streak;
+  $("streakTotal").textContent=total+" total reps";
+}
+
+// ---------- YouTube ----------
+let ytCache={};
+function playVideo(id){ $("ytMain").innerHTML=
+  `<iframe class="ytframe" src="https://www.youtube.com/embed/${id}?autoplay=1&rel=0" allow="autoplay; encrypted-media" allowfullscreen></iframe>`; }
+async function loadVideos(){
+  const ex=EXERCISES[$("exercise").value];
+  $("ytMain").innerHTML="<small>Loading tutorials…</small>"; $("ytList").innerHTML="";
+  let vids=ytCache[$("exercise").value];
+  if(!vids){ try{ const r=await fetch("/api/videos?q="+encodeURIComponent(ex.yt));
+    vids=(await r.json()).videos||[]; ytCache[$("exercise").value]=vids; }catch{ vids=[]; } }
+  if(!vids.length){ $("ytMain").innerHTML="<small>No videos found right now.</small>"; return; }
+  playVideo(vids[0].id); $("ytList").innerHTML="";
+  vids.forEach(v=>{ const d=document.createElement("div"); d.className="ytthumb";
+    d.innerHTML=`<img src="${v.thumb}" alt=""><span>${v.title}</span>`;
+    d.onclick=()=>playVideo(v.id); $("ytList").appendChild(d); });
+}
+
+// ---------- Controls ----------
+$("startBtn").onclick=async()=>{
+  if(running){ stop(); return; }
+  $("startBtn").textContent="⏸ Stop"; $("startBtn").disabled=true;
+  try{ await start(); }catch(e){ setFeedback("Camera/model error: "+e.message,"bad"); }
+  $("startBtn").disabled=false; $("startBtn").textContent="⏸ Stop";
+};
+function stop(){ running=false; calibrating=false; cancelAnimationFrame(raf);
+  $("calib").classList.remove("on"); $("balance").classList.remove("on");
+  if(video.srcObject) video.srcObject.getTracks().forEach(t=>t.stop());
+  $("poseDot").classList.remove("on"); $("poseStatus").textContent="Paused";
+  $("startBtn").textContent="▶ Start Coaching"; }
+$("resetBtn").onclick=()=>{ reps=0; formScore=100; phase="up"; repBottom=999;
+  $("repCount").textContent=0; setForm(100); $("qualVal").textContent="—"; };
+$("exercise").onchange=()=>{ const ex=EXERCISES[$("exercise").value];
+  setFeedback(ex.cue); if(running) say(ex.cue); loadVideos(); };
+
+renderStreak(); loadVideos();
+
+// ---------- AI Coach ----------
+function addMsg(text,who){ const d=document.createElement("div");
+  d.className="msg "+who;
+  const av=document.createElement("div"); av.className="av"; av.textContent=who==="ai"?"🤖":"🙂";
+  const b=document.createElement("div"); b.className="bubble"; b.textContent=text;
+  d.appendChild(av); d.appendChild(b); $("msgs").appendChild(d);
+  $("msgs").scrollTop=$("msgs").scrollHeight; return d; }
+function localCoach(q){ const ex=EXERCISES[$("exercise").value]; q=q.toLowerCase();
+  if(q.includes("form")||q.includes("doing")) return `Form score ${formScore}%. Last rep "${lastQuality}". ${formScore<70?"Focus on full range — "+ex.lowMsg.toLowerCase()+".":"Looking solid!"}`;
+  if(q.includes("muscle")||q.includes("work")) return `The ${ex.name} mainly works your ${ex.muscle}.`;
+  if(q.includes("easier")||q.includes("hard")) return `Set difficulty to "Accessible range" — I'll count reps within a comfortable range.`;
+  return `For the ${ex.name}: ${ex.cue} You're at ${reps} reps (${formScore}% form).`;
+}
+async function aiCoach(q){ const ex=EXERCISES[$("exercise").value];
+  const ctx=`exercise=${ex.name}, reps=${reps}, formScore=${formScore}%, lastAngle=${lastAngle}deg, lastRep=${lastQuality}, difficulty=${$("difficulty").value}, profile=${$("profTxt").textContent.slice(0,80)}`;
+  try{ const r=await fetch("/api/coach",{method:"POST",headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({question:q,ctx})});
+    const j=await r.json(); return (j.answer&&j.answer.trim())||localCoach(q);
+  }catch{ return localCoach(q); }
+}
+async function send(){ const q=$("chatInput").value.trim(); if(!q) return;
+  addMsg(q,"user"); $("chatInput").value="";
+  const t=document.createElement("div"); t.className="msg ai";
+  t.innerHTML='<div class="av">🤖</div><div class="bubble typing"><span></span><span></span><span></span></div>';
+  $("msgs").appendChild(t); $("msgs").scrollTop=$("msgs").scrollHeight;
+  const reply=await aiCoach(q); t.remove(); addMsg(reply,"ai"); say(reply);
+}
+$("sendBtn").onclick=send;
+$("chatInput").addEventListener("keydown",e=>{ if(e.key==="Enter") send(); });
+document.querySelectorAll(".chip").forEach(c=>c.onclick=()=>{ $("chatInput").value=c.dataset.q; send(); });
+</script>
+</body>
+</html>
